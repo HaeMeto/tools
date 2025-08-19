@@ -1,25 +1,43 @@
-# Fix Proxmox Repo (No-Subscription)
+🛠️ Tools Collection
 
-Script sederhana untuk menghapus repository **Enterprise Proxmox** (yang membutuhkan lisensi berbayar) dan menggantinya dengan repository **No-Subscription**.  
-Cocok untuk instalasi Proxmox VE tanpa lisensi, agar bisa melakukan update paket tanpa error `401 Unauthorized`.
----
+Selamat datang di repositori ini! 🎉
+Repo ini berisi kumpulan berbagai tools yang saya buat. README ini berfungsi sebagai daftar isi agar mudah menelusuri setiap tool.
 
-## 📌 Fitur
-- Backup semua file repository lama ke `/root/backup-apt-sources/`
-- Menghapus repository:
-  - `pve-enterprise.list`
-  - `pve-enterprise.sources`
-- Menghapus atau mengganti `ceph.sources` jika masih mengarah ke `enterprise.proxmox.com`
-- Menambahkan repository resmi **no-subscription**:
-  - `http://download.proxmox.com/debian/pve trixie pve-no-subscription`
-  - `http://download.proxmox.com/debian/ceph-squid trixie no-subscription`
+📖 Daftar Isi
+### 🔹 Virtualization
+- [Proxmox Helper](./proxmox/proxmox-helper) – Script untuk konfigurasi & update Proxmox
 
----
+🔹 Networking & Security
 
-## 🚀 Cara Pakai
-1. Clone repo atau copy file `fix-proxmox-repo.sh` ke server Proxmox:
-   ```bash
-   Cuma biar lebih aman biasanya ditulis lengkap seperti ini:
-   curl -s https://raw.githubusercontent.com/HaeMeto/tools/main/fix-proxmox-repo.sh | bash
-   Atau kalau kamu pakai wget:
-   wget -qO- https://raw.githubusercontent.com/HaeMeto/tools/main/fix-proxmox-repo.sh | bash
+(coming soon)
+
+🔹 Database
+
+(coming soon)
+
+🔹 AI & Machine Learning
+
+(coming soon)
+
+🔹 DevOps / Automation
+
+(coming soon)
+
+🚀 Cara Menggunakan
+
+Clone repository ini:
+
+git clone https://github.com/username/tools-collection.git
+cd tools-collection
+
+
+Pilih tool dari daftar isi di atas, lalu ikuti petunjuk pada README masing-masing tool.
+
+🤝 Kontribusi
+
+Pull request selalu diterima!
+Kalau ada ide tool baru atau perbaikan, silakan buka issue.
+
+📜 Lisensi
+
+MIT License
