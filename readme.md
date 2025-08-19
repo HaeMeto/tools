@@ -7,19 +7,19 @@ Repo ini berisi kumpulan berbagai tools yang saya buat. README ini berfungsi seb
 ### 🔹 Virtualization
 - [Proxmox Helper](./proxmox/fix-proxmox-repo.sh) – Script untuk konfigurasi & update Proxmox
 
-🔹 Networking & Security
+### 🔹 Networking & Security
 
 (coming soon)
 
-🔹 Database
+### 🔹 Database
 
 (coming soon)
 
-🔹 AI & Machine Learning
+### 🔹 AI & Machine Learning
 
 (coming soon)
 
-🔹 DevOps / Automation
+### 🔹 DevOps / Automation
 
 (coming soon)
 
@@ -33,11 +33,11 @@ cd tools-collection
 
 Pilih tool dari daftar isi di atas, lalu ikuti petunjuk pada README masing-masing tool.
 
-🤝 Kontribusi
+### 🤝 Kontribusi
 
 Pull request selalu diterima!
 Kalau ada ide tool baru atau perbaikan, silakan buka issue.
 
-📜 Lisensi
+### 📜 Lisensi
 
 MIT License
