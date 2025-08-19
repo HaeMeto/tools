@@ -2,7 +2,6 @@
 
 Script sederhana untuk menghapus repository **Enterprise Proxmox** (yang membutuhkan lisensi berbayar) dan menggantinya dengan repository **No-Subscription**.  
 Cocok untuk instalasi Proxmox VE tanpa lisensi, agar bisa melakukan update paket tanpa error `401 Unauthorized`.
-
 ---
 
 ## 📌 Fitur
@@ -20,4 +19,7 @@ Cocok untuk instalasi Proxmox VE tanpa lisensi, agar bisa melakukan update paket
 ## 🚀 Cara Pakai
 1. Clone repo atau copy file `fix-proxmox-repo.sh` ke server Proxmox:
    ```bash
-   wget https://raw.githubusercontent.com/<username>/<repo>/main/fix-proxmox-repo.sh
+   Cuma biar lebih aman biasanya ditulis lengkap seperti ini:
+   curl -s https://raw.githubusercontent.com/HaeMeto/tools/main/fix-proxmox-repo.sh | bash
+   Atau kalau kamu pakai wget:
+   wget -qO- https://raw.githubusercontent.com/HaeMeto/tools/main/fix-proxmox-repo.sh | bash
