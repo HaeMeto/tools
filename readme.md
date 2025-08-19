@@ -27,7 +27,7 @@ Repo ini berisi kumpulan berbagai tools yang saya buat. README ini berfungsi seb
 
 Clone repository ini:
 
-git clone https://github.com/username/tools-collection.git
+git clone https://github.com/HaeMeto/tools.git
 cd tools-collection
 
 
