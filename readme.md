@@ -5,7 +5,7 @@ Repo ini berisi kumpulan berbagai tools yang saya buat. README ini berfungsi seb
 
 📖 Daftar Isi
 ### 🔹 Virtualization
-- [Proxmox Helper](./proxmox/proxmox-helper) – Script untuk konfigurasi & update Proxmox
+- [Proxmox Helper](./proxmox/fix-proxmox-repo.sh) – Script untuk konfigurasi & update Proxmox
 
 🔹 Networking & Security
 
