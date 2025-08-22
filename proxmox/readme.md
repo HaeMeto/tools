@@ -19,8 +19,12 @@ Cocok untuk instalasi Proxmox VE tanpa lisensi, agar bisa melakukan update paket
 
 ## 🚀 Cara Pakai
 1. Clone repo atau copy file `fix-proxmox-repo.sh` ke server Proxmox:
-   ```bash
+   
    Cuma biar lebih aman biasanya ditulis lengkap seperti ini:
+   ```bash
    curl -s https://raw.githubusercontent.com/HaeMeto/tools/main/fix-proxmox-repo.sh | bash
+   ```
    Atau kalau kamu pakai wget:
+   ```bash
    wget -qO- https://raw.githubusercontent.com/HaeMeto/tools/main/fix-proxmox-repo.sh | bash
+   ```
