@@ -28,6 +28,7 @@ Gunakan salah satu perintah berikut:
 
 
 # Menggunakan curl
+```bash
 curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/docker/install-docker.sh | bash
 
 # Menggunakan wget
