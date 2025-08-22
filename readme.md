@@ -36,5 +36,3 @@ Pilih tool dari daftar isi di atas, lalu ikuti petunjuk pada README masing-masin
 Pull request selalu diterima!
 Kalau ada ide tool baru atau perbaikan, silakan buka issue.
 
-### 📜 Lisensi
-MIT License
