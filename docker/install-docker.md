@@ -30,29 +30,38 @@ Gunakan salah satu perintah berikut:
 # Menggunakan curl
 ```bash
 curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/docker/install-docker.sh | bash
+```
 
 # Menggunakan wget
+```bash
 wget -qO- https://raw.githubusercontent.com/HaeMeto/tools/main/docker/install-docker.sh | bash
-
+```
 
 ## ⚙️ Opsi Lanjutan
 
 # 1. Paksa pakai binary docker-compose (bukan plugin)
+```bash
 USE_BINARY_COMPOSE=1 curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/docker/install-docker.sh | bash
-
+```
 # 2. Pin versi binary docker-compose tertentu
+```bash
 USE_BINARY_COMPOSE=1 COMPOSE_VERSION=2.28.1 wget -qO- https://raw.githubusercontent.com/HaeMeto/tools/main/docker/install-docker.sh | bash
+```
 
 # 3. Jangan tambahkan user ke grup docker
+```bash
 SKIP_GROUP=1 curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/docker/install-docker.sh | bash
-
+```
 # 4. Jalankan sebagai root (tanpa sudo)
+```bash
 curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/docker/install-docker.sh | bash
-
+```
 
 ## 🔒 Catatan Keamanan
 # ⚠️ Hanya pipe script dari sumber yang kamu percaya.
 
 Untuk ekstra aman, unduh dulu lalu jalankan secara manual:
+```bash
 curl -fsSL -o /tmp/install-docker.sh https://raw.githubusercontent.com/HaeMeto/tools/main/docker/install-docker.sh
 bash /tmp/install-docker.sh
+```
