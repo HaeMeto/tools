@@ -22,21 +22,19 @@ Repo ini berisi kumpulan berbagai tools yang saya buat. README ini berfungsi seb
 ### 🔹 DevOps / Automation
 - [Install Docker](./docker/install-docker.sh) – [readme](./docker/install-docker.md)
 
-🚀 Cara Menggunakan
+
+### 🚀 Cara Menggunakan
 
 Clone repository ini:
-
+```bash
 git clone https://github.com/HaeMeto/tools.git
 cd tools-collection
-
-
+```
 Pilih tool dari daftar isi di atas, lalu ikuti petunjuk pada README masing-masing tool.
 
 ### 🤝 Kontribusi
-
 Pull request selalu diterima!
 Kalau ada ide tool baru atau perbaikan, silakan buka issue.
 
 ### 📜 Lisensi
-
 MIT License
