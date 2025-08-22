@@ -20,8 +20,7 @@ Repo ini berisi kumpulan berbagai tools yang saya buat. README ini berfungsi seb
 (coming soon)
 
 ### 🔹 DevOps / Automation
-
-(coming soon)
+- [Install Docker](./dokcer/install-docker.sh) – [readme](./dokcer/install-docker.md)
 
 🚀 Cara Menggunakan
 
