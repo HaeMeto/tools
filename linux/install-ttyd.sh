@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script install ttyd + setup service ringan
+# Script install ttyd + setup service lightweight
 
 USER=admin
 PASS=pas12345
@@ -19,7 +19,7 @@ cmake ..
 make
 make install
 
-echo "===> Buat systemd service..."
+echo "===> Generate systemd service..."
 cat > /etc/systemd/system/ttyd.service <<EOF
 [Unit]
 Description=ttyd - Web Terminal
@@ -40,6 +40,6 @@ systemctl daemon-reload
 systemctl enable ttyd
 systemctl start ttyd
 
-echo "===> Selesai!"
+echo "===> Completed!"
 echo "Akses terminal web di: http://$(hostname -I | awk '{print $1}'):$PORT"
 echo "Login: $USER / $PASS"
