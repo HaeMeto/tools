@@ -2,16 +2,16 @@
 
 set -e
 
-# ==== Ambil password dari argumen ====
+# ==== Get Password From Argument ====
 if [ -z "$1" ]; then
-  echo "❌ Error: Password belum diberikan."
-  echo "Cara pakai: ./install-code-server.sh <PASSWORD>"
+  echo "❌ Error: Password Required."
+  echo "Usage: ./install-code-server.sh <PASSWORD>"
   exit 1
 fi
 
 PASSWORD="$1"
 
-# ==== Konfigurasi lainnya ====
+# ==== Another Configuration ====
 PORT=8081
 USER_NAME=$(whoami)
 HOME_DIR="/home"
