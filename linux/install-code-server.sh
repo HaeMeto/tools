@@ -36,21 +36,23 @@ sudo apt install -y curl coreutils
 echo "[2/6] Installing code-server..."
 curl -fsSL https://code-server.dev/install.sh | sh
 
-echo "[3/6] Running code-server once to generate default config..."
-# Run for 5 seconds with an ephemeral port to generate config.yaml
-runuser -l "$USER_NAME" -c "timeout 5s code-server --bind-addr 127.0.0.1:0 --auth password >/dev/null 2>&1 || true"
+# ==== DETEKSI OS ====
+OS_NAME=$(grep "^ID=" /etc/os-release | cut -d= -f2 | tr -d '"')
 
-# Kill leftover process in case timeout didn’t terminate cleanly
-if pgrep -u "$USER_NAME" -f 'code-server' >/dev/null 2>&1; then
-  echo "   ⛔ Killing leftover code-server process..."
-  pkill -u "$USER_NAME" -f 'code-server' || true
+if [[ "$OS_NAME" == "debian" ]]; then
+    echo "[3/6] Skip running code-server on Debian (generate config skipped)"
+else
+    echo "[3/6] Running code-server once to generate default config..."
+    runuser -l "$USER_NAME" -c "timeout 5s code-server --bind-addr 127.0.0.1:0 --auth password >/dev/null 2>&1 || true"
+
+    if pgrep -u "$USER_NAME" -f 'code-server' >/dev/null 2>&1; then
+      echo "   ⛔ Killing leftover code-server process..."
+      pkill -u "$USER_NAME" -f 'code-server' || true
+    fi
 fi
 
 echo "[4/6] Writing config.yaml..."
-# Ensure config directory exists
 sudo -u "$USER_NAME" mkdir -p "$CONFIG_DIR"
-
-# Overwrite config.yaml with custom settings
 sudo -u "$USER_NAME" tee "$CONFIG_FILE" >/dev/null <<EOF
 bind-addr: 0.0.0.0:${PORT}
 auth: password
