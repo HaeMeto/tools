@@ -102,10 +102,7 @@ if ! has_cmd code-server; then
   fi
 fi
 
-if ! has_cmd code-server; then
-  echo "❌ code-server not found after install."
-  exit 1
-fi
+
 
 # ==== (Optional) Bootstrap config (skip on Debian if diminta sebelumnya) ====
 if [ "$OS_ID" = "debian" ]; then
