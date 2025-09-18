@@ -36,22 +36,8 @@ sudo apt install -y curl coreutils
 echo "[2/6] Installing code-server..."
 curl -fsSL https://code-server.dev/install.sh | sh
 
-# ==== DETEKSI OS ====
-OS_NAME=$(grep "^ID=" /etc/os-release | cut -d= -f2 | tr -d '"')
-
-if [[ "$OS_NAME" == "debian" ]]; then
-  echo "[3/6] Skip running code-server on Debian (generate config skipped)"
-else
-  echo "[3/6] Running code-server once to generate default config..."
-  runuser -l "$USER_NAME" -c "timeout 5s code-server --bind-addr 127.0.0.1:0 --auth password >/dev/null 2>&1 || true"
-
-  if pgrep -u "$USER_NAME" -f 'code-server' >/dev/null 2>&1; then
-    echo "   ⛔ Killing leftover code-server process..."
-    pkill -u "$USER_NAME" -f 'code-server' || true
-  fi
-fi
-
-echo "[4/6] Writing config.yaml..."
+# === Tanpa menjalankan code-server sementara ===
+echo "[3/6] Generating config without starting code-server..."
 sudo -u "$USER_NAME" mkdir -p "$CONFIG_DIR"
 sudo -u "$USER_NAME" tee "$CONFIG_FILE" >/dev/null <<EOF
 bind-addr: 0.0.0.0:${PORT}
@@ -59,8 +45,9 @@ auth: password
 password: ${PASSWORD}
 cert: false
 EOF
+sudo chown -R "$USER_NAME":"$USER_NAME" "$CONFIG_DIR"
 
-echo "[5/6] Creating systemd service..."
+echo "[4/6] Creating systemd service..."
 sudo tee "$SERVICE_FILE" >/dev/null <<EOF
 [Unit]
 Description=code-server
@@ -72,17 +59,16 @@ User=${USER_NAME}
 Environment=HOME=${USER_HOME}
 WorkingDirectory=${USER_HOME}
 ExecStart=/usr/bin/code-server
-Restart=always
+Restart=on-failure
 RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-echo "[6/6] Enabling and starting service..."
+echo "[5/6] Enabling and starting service..."
 sudo systemctl daemon-reload
-sudo systemctl enable code-server
-sudo systemctl restart code-server
+sudo systemctl enable --now code-server
 
 sleep 1
 if systemctl --no-pager --quiet is-active code-server; then
@@ -94,5 +80,5 @@ if systemctl --no-pager --quiet is-active code-server; then
   echo "🧩 Systemd service: ${SERVICE_FILE}"
 else
   echo "⚠️  code-server service is not active. Check logs using:"
-  echo "    sudo journalctl -u code-server -f"
+  echo "    sudo journalctl -u code-server -n 200 --no-pager"
 fi
