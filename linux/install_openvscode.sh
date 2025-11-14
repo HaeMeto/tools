@@ -47,6 +47,10 @@ ExecStart=$INSTALL_DIR/bin/openvscode-server \
     --disable-telemetry
 
 Restart=always
+RestartSec=10
+
+# CPUQuota=80%
+MemoryMax=2G
 
 [Install]
 WantedBy=multi-user.target
