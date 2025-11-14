@@ -1,6 +1,12 @@
 #!/bin/bash
 
 # ============================
+#  USAGE
+# chmod +x install_openvscode.sh
+# ./install_openvscode.sh 8080 mytoken123
+# ============================
+
+# ============================
 #  CONFIG
 # ============================
 PORT="${1:-3000}"          # Argumen 1 = port (default 3000)
