@@ -2,169 +2,368 @@
 set -euo pipefail
 
 # =========================================================
-# Universal code-server installer
-# Supports:
+# Universal code-server Installer
+# =========================================================
+#
+# Features:
+# - User install mode (default)
+# - Root/global install mode (--root)
 # - Ubuntu / Debian
-# - AlmaLinux / RockyLinux / RHEL / CentOS Stream
+# - AlmaLinux / Rocky / RHEL / CentOS
+# - Standalone GitHub release install
+# - Systemd service
+#
+# =========================================================
+#
+# USER MODE (recommended)
+# -----------------------
+# Install:
+#   ~/.local/lib/code-server
+#
+# Binary:
+#   ~/.local/bin/code-server
+#
+# Service:
+#   systemctl --user
+#
+# =========================================================
+#
+# ROOT MODE
+# ----------
+# Install:
+#   /opt/code-server
+#
+# Binary:
+#   /usr/local/bin/code-server
+#
+# Service:
+#   systemctl
+#
+# =========================================================
 #
 # Usage:
+#
+# USER MODE:
 #   ./install-code-server.sh <PASSWORD> [PORT]
 #
+# ROOT MODE:
+#   sudo ./install-code-server.sh --root <PASSWORD> [PORT]
+#
 # Example:
-#   ./install-code-server.sh MyStrongPass123 8081
+#
+# User mode:
+#   ./install-code-server.sh MyPassword123 8081
+#
+# Root mode:
+#   sudo ./install-code-server.sh --root MyPassword123 8081
+#
 # =========================================================
 
-# ==== Args ====
+ROOT_MODE=false
+
+# =========================================================
+# Parse flags
+# =========================================================
+
+if [[ "${1:-}" == "--root" ]]; then
+    ROOT_MODE=true
+    shift
+fi
+
+# =========================================================
+# Args
+# =========================================================
+
 if [ $# -lt 1 ]; then
-  echo "❌ Error: Password required."
-  echo "Usage: $0 <PASSWORD> [PORT]"
-  exit 1
+    echo "❌ Password required"
+    echo
+    echo "Usage:"
+    echo "  $0 [--root] <PASSWORD> [PORT]"
+    exit 1
 fi
 
 PASSWORD="$1"
 PORT="${2:-8081}"
 
-echo "[0/8] Checking environment..."
+# =========================================================
+# Environment Check
+# =========================================================
+
+echo "[0/10] Checking environment..."
 
 if ! command -v sudo >/dev/null 2>&1; then
-  echo "❌ sudo is required."
-  exit 1
+    echo "❌ sudo is required"
+    exit 1
 fi
 
-USER_NAME="$(whoami)"
-USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+CURRENT_USER="$(whoami)"
 
-if [ -z "${USER_HOME}" ] || [ ! -d "${USER_HOME}" ]; then
-  echo "❌ Cannot determine home directory for user: $USER_NAME"
-  exit 1
+# =========================================================
+# Root Mode
+# =========================================================
+
+if [ "$ROOT_MODE" = true ]; then
+
+    echo "   Install mode: ROOT"
+
+    if [ "$EUID" -ne 0 ]; then
+        echo "❌ Root mode requires sudo/root"
+        exit 1
+    fi
+
+    USER_NAME="root"
+    USER_HOME="/root"
+
+    INSTALL_BASE="/opt"
+    BIN_DIR="/usr/local/bin"
+
+    CONFIG_DIR="/root/.config/code-server"
+    CONFIG_FILE="${CONFIG_DIR}/config.yaml"
+
+    SERVICE_FILE="/etc/systemd/system/code-server.service"
+
+# =========================================================
+# User Mode
+# =========================================================
+
+else
+
+    echo "   Install mode: USER"
+
+    if [ "$CURRENT_USER" = "root" ]; then
+        echo "❌ Do not run user mode as root"
+        echo "👉 Use normal user"
+        echo "👉 Or use --root"
+        exit 1
+    fi
+
+    USER_NAME="$CURRENT_USER"
+
+    USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+
+    INSTALL_BASE="${USER_HOME}/.local/lib"
+    BIN_DIR="${USER_HOME}/.local/bin"
+
+    CONFIG_DIR="${USER_HOME}/.config/code-server"
+    CONFIG_FILE="${CONFIG_DIR}/config.yaml"
+
+    SYSTEMD_DIR="${USER_HOME}/.config/systemd/user"
+    SERVICE_FILE="${SYSTEMD_DIR}/code-server.service"
+
 fi
 
-CONFIG_DIR="${USER_HOME}/.config/code-server"
-CONFIG_FILE="${CONFIG_DIR}/config.yaml"
-SERVICE_FILE="/etc/systemd/system/code-server.service"
+# =========================================================
+# Detect OS
+# =========================================================
 
-# ==== Detect OS ====
-echo "[1/8] Detecting operating system..."
+echo "[1/10] Detecting OS..."
 
 if [ -f /etc/os-release ]; then
-  . /etc/os-release
+    . /etc/os-release
 else
-  echo "❌ Cannot detect OS."
-  exit 1
+    echo "❌ Cannot detect OS"
+    exit 1
 fi
 
 OS_ID="${ID,,}"
 OS_LIKE="${ID_LIKE:-}"
 
-echo "   Detected OS: ${PRETTY_NAME}"
+echo "   OS: ${PRETTY_NAME}"
 
 PKG_MANAGER=""
-INSTALL_CMD=""
 
 if [[ "$OS_ID" =~ (ubuntu|debian) ]] || [[ "$OS_LIKE" =~ debian ]]; then
-  PKG_MANAGER="apt"
-  INSTALL_CMD="sudo apt install -y"
+
+    PKG_MANAGER="apt"
+
 elif [[ "$OS_ID" =~ (almalinux|rocky|rhel|centos|fedora) ]] || [[ "$OS_LIKE" =~ (rhel|fedora) ]]; then
-  if command -v dnf >/dev/null 2>&1; then
-    PKG_MANAGER="dnf"
-    INSTALL_CMD="sudo dnf install -y"
-  else
-    PKG_MANAGER="yum"
-    INSTALL_CMD="sudo yum install -y"
-  fi
+
+    if command -v dnf >/dev/null 2>&1; then
+        PKG_MANAGER="dnf"
+    else
+        PKG_MANAGER="yum"
+    fi
+
 else
-  echo "❌ Unsupported OS: ${OS_ID}"
-  exit 1
+
+    echo "❌ Unsupported OS"
+    exit 1
+
 fi
 
-# ==== Cleanup old installation ====
-echo "[2/8] Cleaning old installation..."
+# =========================================================
+# Install Dependencies
+# =========================================================
 
-if systemctl list-unit-files | grep -q "^code-server.service"; then
-  echo "   ⚠️  Existing code-server service found."
-
-  sudo systemctl stop code-server || true
-  sudo systemctl disable code-server || true
-
-  sudo rm -f "$SERVICE_FILE"
-
-  sudo systemctl daemon-reload
-fi
-
-# Remove package
-if command -v code-server >/dev/null 2>&1; then
-  echo "   ⚠️  Removing old package..."
-
-  if [ "$PKG_MANAGER" = "apt" ]; then
-    sudo apt remove --purge -y code-server || true
-  else
-    sudo ${PKG_MANAGER} remove -y code-server || true
-  fi
-fi
-
-# Remove config
-if [ -d "$CONFIG_DIR" ]; then
-  echo "   ⚠️  Removing old config..."
-  sudo rm -rf "$CONFIG_DIR"
-fi
-
-echo "   ✅ Cleanup completed."
-
-# ==== Install dependencies ====
-echo "[3/8] Installing dependencies..."
+echo "[2/10] Installing dependencies..."
 
 if [ "$PKG_MANAGER" = "apt" ]; then
-  sudo apt update
-  ${INSTALL_CMD} curl wget tar gzip
+
+    sudo apt update
+
+    sudo apt install -y \
+        curl \
+        wget \
+        tar \
+        gzip \
+        jq
+
 else
-  ${INSTALL_CMD} curl wget tar gzip
+
+    sudo ${PKG_MANAGER} install -y \
+        curl \
+        wget \
+        tar \
+        gzip \
+        jq
+
 fi
 
-# ==== Install code-server ====
-echo "[4/8] Installing code-server..."
+# =========================================================
+# Detect Architecture
+# =========================================================
 
-curl -fsSL https://code-server.dev/install.sh | sh
+echo "[3/10] Detecting architecture..."
 
-# ==== Create config ====
-echo "[5/8] Writing config.yaml..."
+ARCH="$(uname -m)"
 
-sudo -u "$USER_NAME" mkdir -p "$CONFIG_DIR"
+case "$ARCH" in
+    x86_64)
+        ARCH="amd64"
+        ;;
+    aarch64)
+        ARCH="arm64"
+        ;;
+    *)
+        echo "❌ Unsupported architecture: $ARCH"
+        exit 1
+        ;;
+esac
 
-sudo -u "$USER_NAME" tee "$CONFIG_FILE" >/dev/null <<EOF
+echo "   Architecture: $ARCH"
+
+# =========================================================
+# Get Latest Release
+# =========================================================
+
+echo "[4/10] Fetching latest release..."
+
+LATEST_VERSION="$(
+    curl -fsSL https://api.github.com/repos/coder/code-server/releases/latest \
+    | jq -r '.tag_name'
+)"
+
+if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
+    echo "❌ Failed to get latest version"
+    exit 1
+fi
+
+echo "   Latest version: ${LATEST_VERSION}"
+
+VERSION_NO_V="${LATEST_VERSION#v}"
+
+FILE_NAME="code-server-${VERSION_NO_V}-linux-${ARCH}.tar.gz"
+
+DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/${LATEST_VERSION}/${FILE_NAME}"
+
+TMP_FILE="/tmp/${FILE_NAME}"
+
+# =========================================================
+# Cleanup Old Install
+# =========================================================
+
+echo "[5/10] Cleaning old installation..."
+
+if [ "$ROOT_MODE" = true ]; then
+
+    systemctl stop code-server >/dev/null 2>&1 || true
+    systemctl disable code-server >/dev/null 2>&1 || true
+
+    rm -f "$SERVICE_FILE"
+
+else
+
+    systemctl --user stop code-server >/dev/null 2>&1 || true
+    systemctl --user disable code-server >/dev/null 2>&1 || true
+
+fi
+
+rm -rf "${INSTALL_BASE}/code-server"
+rm -f "${BIN_DIR}/code-server"
+
+mkdir -p "$INSTALL_BASE"
+mkdir -p "$BIN_DIR"
+
+# =========================================================
+# Download & Install
+# =========================================================
+
+echo "[6/10] Installing code-server..."
+
+echo "   Downloading ${FILE_NAME}..."
+
+curl -fL "$DOWNLOAD_URL" -o "$TMP_FILE"
+
+echo "   Extracting..."
+
+tar -xzf "$TMP_FILE" -C /tmp
+
+EXTRACTED_DIR="/tmp/code-server-${VERSION_NO_V}-linux-${ARCH}"
+
+mv "$EXTRACTED_DIR" "${INSTALL_BASE}/code-server"
+
+ln -sf \
+    "${INSTALL_BASE}/code-server/bin/code-server" \
+    "${BIN_DIR}/code-server"
+
+# =========================================================
+# PATH
+# =========================================================
+
+if [ "$ROOT_MODE" = false ]; then
+
+    if ! grep -q '.local/bin' "${USER_HOME}/.bashrc"; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${USER_HOME}/.bashrc"
+    fi
+
+    export PATH="${BIN_DIR}:$PATH"
+
+fi
+
+# =========================================================
+# Create Config
+# =========================================================
+
+echo "[7/10] Creating config..."
+
+mkdir -p "$CONFIG_DIR"
+
+cat > "$CONFIG_FILE" <<EOF
 bind-addr: 0.0.0.0:${PORT}
 auth: password
 password: ${PASSWORD}
 cert: false
 EOF
 
-sudo chown -R "$USER_NAME":"$USER_NAME" "$CONFIG_DIR"
+# =========================================================
+# Create Service
+# =========================================================
 
-# ==== Create systemd service ====
-echo "[6/8] Creating systemd service..."
+echo "[8/10] Creating service..."
 
-CODE_SERVER_BIN="$(command -v code-server)"
+if [ "$ROOT_MODE" = true ]; then
 
-if [ -z "$CODE_SERVER_BIN" ]; then
-  echo "❌ code-server binary not found."
-  exit 1
-fi
-
-sudo tee "$SERVICE_FILE" >/dev/null <<EOF
+cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=code-server
 After=network.target
 
 [Service]
 Type=simple
-User=${USER_NAME}
-Group=${USER_NAME}
-Environment=HOME=${USER_HOME}
-WorkingDirectory=${USER_HOME}
-ExecStart=${CODE_SERVER_BIN}
+ExecStart=${BIN_DIR}/code-server
 Restart=always
-RestartSec=3
+RestartSec=5
 
-# Hardening
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -172,51 +371,127 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# ==== Enable service ====
-echo "[7/8] Enabling service..."
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now code-server
-
-sleep 2
-
-# ==== Firewall ====
-echo "[8/8] Configuring firewall..."
-
-if command -v firewall-cmd >/dev/null 2>&1; then
-  sudo firewall-cmd --permanent --add-port=${PORT}/tcp || true
-  sudo firewall-cmd --reload || true
-  echo "   ✅ firewalld updated."
-elif command -v ufw >/dev/null 2>&1; then
-  sudo ufw allow ${PORT}/tcp || true
-  echo "   ✅ ufw updated."
 else
-  echo "   ⚠️  No supported firewall detected."
+
+mkdir -p "$SYSTEMD_DIR"
+
+cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=code-server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${BIN_DIR}/code-server
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=default.target
+EOF
+
 fi
 
-# ==== Status ====
-echo
-if systemctl --quiet is-active code-server; then
-  SERVER_IP="$(hostname -I | awk '{print $1}')"
+# =========================================================
+# Start Service
+# =========================================================
 
-  echo "================================================="
-  echo "✅ code-server installed successfully!"
-  echo "================================================="
-  echo "🌐 URL      : http://${SERVER_IP}:${PORT}"
-  echo "👤 User     : ${USER_NAME}"
-  echo "🔐 Password : ${PASSWORD}"
-  echo "🗂  Config   : ${CONFIG_FILE}"
-  echo "🧩 Service  : ${SERVICE_FILE}"
-  echo
-  echo "📋 Commands:"
-  echo "   sudo systemctl status code-server"
-  echo "   sudo journalctl -u code-server -f"
-  echo "   sudo systemctl restart code-server"
-  echo "================================================="
+echo "[9/10] Starting service..."
+
+if [ "$ROOT_MODE" = true ]; then
+
+    systemctl daemon-reload
+    systemctl enable --now code-server
+
 else
-  echo "❌ code-server service failed to start."
-  echo
-  echo "Check logs with:"
-  echo "sudo journalctl -u code-server -f"
-  exit 1
+
+    sudo loginctl enable-linger "$USER_NAME"
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now code-server
+
+fi
+
+sleep 3
+
+# =========================================================
+# Firewall
+# =========================================================
+
+echo "[10/10] Configuring firewall..."
+
+if command -v firewall-cmd >/dev/null 2>&1; then
+
+    sudo firewall-cmd --permanent --add-port=${PORT}/tcp || true
+    sudo firewall-cmd --reload || true
+
+elif command -v ufw >/dev/null 2>&1; then
+
+    sudo ufw allow ${PORT}/tcp || true
+
+fi
+
+# =========================================================
+# Status
+# =========================================================
+
+echo
+
+if [ "$ROOT_MODE" = true ]; then
+
+    ACTIVE_CMD="systemctl is-active --quiet code-server"
+
+else
+
+    ACTIVE_CMD="systemctl --user is-active --quiet code-server"
+
+fi
+
+if eval "$ACTIVE_CMD"; then
+
+    SERVER_IP="$(hostname -I | awk '{print $1}')"
+
+    echo "=================================================="
+    echo "✅ code-server installed successfully"
+    echo "=================================================="
+    echo "🌐 URL      : http://${SERVER_IP}:${PORT}"
+    echo "👤 User     : ${USER_NAME}"
+    echo "🔐 Password : ${PASSWORD}"
+    echo
+    echo "📂 Install  : ${INSTALL_BASE}/code-server"
+    echo "⚙️ Config   : ${CONFIG_FILE}"
+    echo "🧩 Binary   : ${BIN_DIR}/code-server"
+    echo
+
+    if [ "$ROOT_MODE" = true ]; then
+
+        echo "📋 Commands:"
+        echo
+        echo "systemctl status code-server"
+        echo "systemctl restart code-server"
+        echo "journalctl -u code-server -f"
+
+    else
+
+        echo "📋 Commands:"
+        echo
+        echo "systemctl --user status code-server"
+        echo "systemctl --user restart code-server"
+        echo "journalctl --user -u code-server -f"
+
+    fi
+
+    echo
+    echo "=================================================="
+
+else
+
+    echo "❌ code-server failed to start"
+
+    exit 1
+
 fi
