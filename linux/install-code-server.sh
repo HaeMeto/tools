@@ -11,58 +11,90 @@ set -euo pipefail
 # - Ubuntu / Debian
 # - AlmaLinux / Rocky / RHEL / CentOS
 # - Standalone GitHub release install
+# - Safer temp handling (/var/tmp)
 # - Systemd service
 #
 # =========================================================
 #
+# INSTALLATION EXAMPLES
+# =========================================================
+#
+# ---------------------------------------------------------
 # USER MODE (recommended)
-# -----------------------
-# Install:
+# ---------------------------------------------------------
+#
+# Install to:
 #   ~/.local/lib/code-server
 #
 # Binary:
 #   ~/.local/bin/code-server
 #
-# Service:
-#   systemctl --user
+# Run:
 #
-# =========================================================
+#   curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+#   | bash -s -- MyPassword123
 #
+# Custom port:
+#
+#   curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+#   | bash -s -- MyPassword123 9090
+#
+# ---------------------------------------------------------
 # ROOT MODE
-# ----------
-# Install:
+# ---------------------------------------------------------
+#
+# Install to:
 #   /opt/code-server
 #
 # Binary:
 #   /usr/local/bin/code-server
 #
-# Service:
-#   systemctl
+# Run:
+#
+#   curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+#   | sudo bash -s -- --root MyPassword123
+#
+# Custom port:
+#
+#   curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+#   | sudo bash -s -- --root MyPassword123 9090
 #
 # =========================================================
 #
-# Usage:
+# ACCESS
+# =========================================================
 #
-# USER MODE:
-#   ./install-code-server.sh <PASSWORD> [PORT]
+# Default:
 #
-# ROOT MODE:
-#   sudo ./install-code-server.sh --root <PASSWORD> [PORT]
+#   http://SERVER_IP:8081
 #
 # Example:
 #
-# User mode:
-#   ./install-code-server.sh MyPassword123 8081
+#   http://192.168.1.10:8081
 #
-# Root mode:
-#   sudo ./install-code-server.sh --root MyPassword123 8081
+# =========================================================
+#
+# SERVICE COMMANDS
+# =========================================================
+#
+# USER MODE:
+#
+#   systemctl --user status code-server
+#   systemctl --user restart code-server
+#   journalctl --user -u code-server -f
+#
+# ROOT MODE:
+#
+#   systemctl status code-server
+#   systemctl restart code-server
+#   journalctl -u code-server -f
 #
 # =========================================================
 
 ROOT_MODE=false
 
 # =========================================================
-# Parse flags
+# Parse Flags
 # =========================================================
 
 if [[ "${1:-}" == "--root" ]]; then
@@ -89,7 +121,7 @@ PORT="${2:-8081}"
 # Environment Check
 # =========================================================
 
-echo "[0/10] Checking environment..."
+echo "[0/11] Checking environment..."
 
 if ! command -v sudo >/dev/null 2>&1; then
     echo "❌ sudo is required"
@@ -153,10 +185,19 @@ else
 fi
 
 # =========================================================
+# Temp Directory
+# =========================================================
+
+TMP_DIR="/var/tmp/code-server-installer"
+
+mkdir -p "$TMP_DIR"
+chmod 777 "$TMP_DIR"
+
+# =========================================================
 # Detect OS
 # =========================================================
 
-echo "[1/10] Detecting OS..."
+echo "[1/11] Detecting OS..."
 
 if [ -f /etc/os-release ]; then
     . /etc/os-release
@@ -195,13 +236,13 @@ fi
 # Install Dependencies
 # =========================================================
 
-echo "[2/10] Installing dependencies..."
+echo "[2/11] Installing dependencies..."
 
 if [ "$PKG_MANAGER" = "apt" ]; then
 
-    sudo apt update
+    apt update
 
-    sudo apt install -y \
+    apt install -y \
         curl \
         wget \
         tar \
@@ -210,7 +251,7 @@ if [ "$PKG_MANAGER" = "apt" ]; then
 
 else
 
-    sudo ${PKG_MANAGER} install -y \
+    ${PKG_MANAGER} install -y \
         curl \
         wget \
         tar \
@@ -223,7 +264,7 @@ fi
 # Detect Architecture
 # =========================================================
 
-echo "[3/10] Detecting architecture..."
+echo "[3/11] Detecting architecture..."
 
 ARCH="$(uname -m)"
 
@@ -243,10 +284,10 @@ esac
 echo "   Architecture: $ARCH"
 
 # =========================================================
-# Get Latest Release
+# Fetch Latest Release
 # =========================================================
 
-echo "[4/10] Fetching latest release..."
+echo "[4/11] Fetching latest release..."
 
 LATEST_VERSION="$(
     curl -fsSL https://api.github.com/repos/coder/code-server/releases/latest \
@@ -254,7 +295,7 @@ LATEST_VERSION="$(
 )"
 
 if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
-    echo "❌ Failed to get latest version"
+    echo "❌ Failed to fetch latest release"
     exit 1
 fi
 
@@ -266,13 +307,13 @@ FILE_NAME="code-server-${VERSION_NO_V}-linux-${ARCH}.tar.gz"
 
 DOWNLOAD_URL="https://github.com/coder/code-server/releases/download/${LATEST_VERSION}/${FILE_NAME}"
 
-TMP_FILE="/tmp/${FILE_NAME}"
+TMP_FILE="${TMP_DIR}/${FILE_NAME}"
 
 # =========================================================
-# Cleanup Old Install
+# Cleanup Old Installation
 # =========================================================
 
-echo "[5/10] Cleaning old installation..."
+echo "[5/11] Cleaning old installation..."
 
 if [ "$ROOT_MODE" = true ]; then
 
@@ -295,20 +336,32 @@ mkdir -p "$INSTALL_BASE"
 mkdir -p "$BIN_DIR"
 
 # =========================================================
-# Download & Install
+# Download
 # =========================================================
 
-echo "[6/10] Installing code-server..."
-
-echo "   Downloading ${FILE_NAME}..."
+echo "[6/11] Downloading code-server..."
 
 curl -fL "$DOWNLOAD_URL" -o "$TMP_FILE"
 
-echo "   Extracting..."
+if [ ! -f "$TMP_FILE" ]; then
+    echo "❌ Download failed"
+    exit 1
+fi
 
-tar -xzf "$TMP_FILE" -C /tmp
+# =========================================================
+# Extract
+# =========================================================
 
-EXTRACTED_DIR="/tmp/code-server-${VERSION_NO_V}-linux-${ARCH}"
+echo "[7/11] Extracting package..."
+
+tar -xzf "$TMP_FILE" -C "$TMP_DIR"
+
+EXTRACTED_DIR="${TMP_DIR}/code-server-${VERSION_NO_V}-linux-${ARCH}"
+
+if [ ! -d "$EXTRACTED_DIR" ]; then
+    echo "❌ Extraction failed"
+    exit 1
+fi
 
 mv "$EXTRACTED_DIR" "${INSTALL_BASE}/code-server"
 
@@ -334,7 +387,7 @@ fi
 # Create Config
 # =========================================================
 
-echo "[7/10] Creating config..."
+echo "[8/11] Creating config..."
 
 mkdir -p "$CONFIG_DIR"
 
@@ -349,7 +402,7 @@ EOF
 # Create Service
 # =========================================================
 
-echo "[8/10] Creating service..."
+echo "[9/11] Creating service..."
 
 if [ "$ROOT_MODE" = true ]; then
 
@@ -400,7 +453,7 @@ fi
 # Start Service
 # =========================================================
 
-echo "[9/10] Starting service..."
+echo "[10/11] Starting service..."
 
 if [ "$ROOT_MODE" = true ]; then
 
@@ -422,18 +475,24 @@ sleep 3
 # Firewall
 # =========================================================
 
-echo "[10/10] Configuring firewall..."
+echo "[11/11] Configuring firewall..."
 
 if command -v firewall-cmd >/dev/null 2>&1; then
 
-    sudo firewall-cmd --permanent --add-port=${PORT}/tcp || true
-    sudo firewall-cmd --reload || true
+    firewall-cmd --permanent --add-port=${PORT}/tcp || true
+    firewall-cmd --reload || true
 
 elif command -v ufw >/dev/null 2>&1; then
 
-    sudo ufw allow ${PORT}/tcp || true
+    ufw allow ${PORT}/tcp || true
 
 fi
+
+# =========================================================
+# Cleanup Temp
+# =========================================================
+
+rm -rf "$TMP_DIR"
 
 # =========================================================
 # Status
@@ -491,6 +550,12 @@ if eval "$ACTIVE_CMD"; then
 else
 
     echo "❌ code-server failed to start"
+
+    if [ "$ROOT_MODE" = true ]; then
+        journalctl -u code-server --no-pager -n 50
+    else
+        journalctl --user -u code-server --no-pager -n 50
+    fi
 
     exit 1
 
