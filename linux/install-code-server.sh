@@ -16,6 +16,7 @@ set -euo pipefail
 # - Standalone GitHub release install
 # - SELinux compatible
 # - Systemd service
+# - Circular symlink safe cleanup
 #
 # =========================================================
 #
@@ -85,6 +86,41 @@ if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
     echo "❌ Invalid port: $PORT"
     exit 1
 fi
+
+# =========================================================
+# Helper: safe_unlink
+# Removes a path even if it's a circular/deep symlink,
+# using 'unlink' syscall directly to bypass kernel loop check.
+# =========================================================
+
+safe_unlink() {
+    local target="$1"
+    if [ -L "$target" ]; then
+        unlink "$target" 2>/dev/null || rm -f "$target" 2>/dev/null || true
+    elif [ -e "$target" ]; then
+        rm -f "$target" 2>/dev/null || true
+    fi
+}
+
+# =========================================================
+# Helper: safe_rmdir
+# Removes a directory safely even if it contains circular symlinks.
+# Removes all symlinks first (unlink), then rm -rf the rest.
+# =========================================================
+
+safe_rmdir() {
+    local target="$1"
+    if [ -d "$target" ] && ! [ -L "$target" ]; then
+        # Remove all symlinks inside first to break any loops
+        find "$target" -maxdepth 10 -type l 2>/dev/null \
+            | while IFS= read -r link; do
+                unlink "$link" 2>/dev/null || rm -f "$link" 2>/dev/null || true
+            done
+        rm -rf "$target" 2>/dev/null || true
+    elif [ -L "$target" ]; then
+        unlink "$target" 2>/dev/null || rm -f "$target" 2>/dev/null || true
+    fi
+}
 
 # =========================================================
 # Environment Check
@@ -311,19 +347,22 @@ echo "[6/12] Cleaning old installation..."
 systemctl stop code-server >/dev/null 2>&1 || true
 systemctl disable code-server >/dev/null 2>&1 || true
 
-rm -f "$SERVICE_FILE"
+rm -f "$SERVICE_FILE" 2>/dev/null || true
 
-# remove old symlink loop
-if [ -L "$BIN_FILE" ]; then
-    rm -f "$BIN_FILE"
-fi
+# --- Safe cleanup: handle circular / deep symlinks ---
 
-# remove old install
-rm -rf "$INSTALL_DIR"
+# 1. Hapus BIN_FILE dengan unlink supaya tidak kena loop
+safe_unlink "$BIN_FILE"
 
-# cleanup possible broken symlink inside install
-rm -f /opt/code-server/bin/code-server || true
+# 2. Hapus semua symlink di dalam INSTALL_DIR sebelum rm -rf
+#    supaya tidak stuck "too many levels of symbolic links"
+safe_rmdir "$INSTALL_DIR"
 
+# 3. Fallback: pastikan path hardcoded root mode juga bersih
+safe_unlink "/opt/code-server/bin/code-server"
+safe_unlink "/usr/local/bin/code-server"
+
+# 4. Buat parent directory
 mkdir -p "$(dirname "$INSTALL_DIR")"
 mkdir -p "$(dirname "$BIN_FILE")"
 
@@ -361,19 +400,32 @@ mv "$EXTRACTED_DIR" "$INSTALL_DIR"
 # Create Binary Symlink
 # =========================================================
 
+echo "   Setting up binary..."
+
 REAL_BINARY="${INSTALL_DIR}/bin/code-server"
 
-if [ ! -f "$REAL_BINARY" ]; then
+if [ ! -f "$REAL_BINARY" ] && [ ! -L "$REAL_BINARY" ]; then
     echo "❌ Binary not found: $REAL_BINARY"
     exit 1
 fi
 
-chmod +x "$REAL_BINARY"
+# Resolve real binary jika di dalam tarball sudah berupa symlink
+RESOLVED_BINARY="$(readlink -f "$REAL_BINARY" 2>/dev/null || echo "$REAL_BINARY")"
 
-# remove broken symlink first
-rm -f "$BIN_FILE"
+if [ ! -f "$RESOLVED_BINARY" ]; then
+    echo "❌ Resolved binary not found: $RESOLVED_BINARY"
+    exit 1
+fi
 
-ln -s "$REAL_BINARY" "$BIN_FILE"
+chmod +x "$RESOLVED_BINARY"
+
+# Pastikan BIN_FILE benar-benar bersih sebelum buat symlink baru
+safe_unlink "$BIN_FILE"
+
+# Gunakan -sf (force) untuk mencegah error jika ada sisa file
+ln -sf "$RESOLVED_BINARY" "$BIN_FILE"
+
+echo "   Binary: ${BIN_FILE} -> ${RESOLVED_BINARY}"
 
 # =========================================================
 # SELinux Fix
@@ -417,7 +469,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${REAL_BINARY} --config ${CONFIG_FILE}
+ExecStart=${RESOLVED_BINARY} --config ${CONFIG_FILE}
 Restart=always
 RestartSec=5
 
@@ -439,7 +491,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${REAL_BINARY} --config ${CONFIG_FILE}
+ExecStart=${RESOLVED_BINARY} --config ${CONFIG_FILE}
 Restart=always
 RestartSec=5
 
