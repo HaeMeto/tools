@@ -15,6 +15,7 @@ set -euo pipefail
 # - AlmaLinux / Rocky / RHEL / CentOS
 # - Standalone GitHub release install
 # - Safer temp handling (/var/tmp)
+# - SELinux compatible
 # - Systemd service
 #
 # =========================================================
@@ -87,16 +88,17 @@ fi
 PASSWORD="$1"
 PORT="${2:-8081}"
 
+# Validate port
+if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
+    echo "❌ Invalid port: $PORT"
+    exit 1
+fi
+
 # =========================================================
 # Environment Check
 # =========================================================
 
 echo "[0/12] Checking environment..."
-
-if ! command -v sudo >/dev/null 2>&1; then
-    echo "❌ sudo is required"
-    exit 1
-fi
 
 CURRENT_USER="$(whoami)"
 
@@ -123,10 +125,6 @@ if [ "$ROOT_MODE" = true ]; then
     CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 
     SERVICE_FILE="/etc/systemd/system/code-server.service"
-
-# =========================================================
-# User Mode
-# =========================================================
 
 else
 
@@ -160,6 +158,7 @@ fi
 
 TMP_DIR="/var/tmp/code-server-installer"
 
+rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
 chmod 777 "$TMP_DIR"
 
@@ -228,7 +227,8 @@ else
         tar \
         gzip \
         jq \
-        lsof
+        lsof \
+        policycoreutils-python-utils || true
 
 fi
 
@@ -255,7 +255,7 @@ if [ "$FORCE_MODE" = true ]; then
     fi
 
     systemctl disable --now code-server >/dev/null 2>&1 || true
-    systemctl --user disable --now code-server >/dev/null 2>&1 || true
+    systemctl reset-failed code-server >/dev/null 2>&1 || true
 
 fi
 
@@ -314,22 +314,12 @@ TMP_FILE="${TMP_DIR}/${FILE_NAME}"
 
 echo "[6/12] Cleaning old installation..."
 
-if [ "$ROOT_MODE" = true ]; then
+systemctl stop code-server >/dev/null 2>&1 || true
+systemctl disable code-server >/dev/null 2>&1 || true
 
-    systemctl stop code-server >/dev/null 2>&1 || true
-    systemctl disable code-server >/dev/null 2>&1 || true
-
-    rm -f "$SERVICE_FILE"
-
-else
-
-    systemctl --user stop code-server >/dev/null 2>&1 || true
-    systemctl --user disable code-server >/dev/null 2>&1 || true
-
-fi
-
+rm -f "$SERVICE_FILE"
 rm -rf "${INSTALL_BASE}/code-server"
-rm -rf "${BIN_DIR}"
+rm -rf "$BIN_DIR"
 
 mkdir -p "$INSTALL_BASE"
 mkdir -p "$BIN_DIR"
@@ -373,22 +363,13 @@ ln -sf \
 chmod +x "${INSTALL_BASE}/code-server/bin/code-server"
 chmod +x "${BIN_DIR}/code-server"
 
+# SELinux fix
 if command -v restorecon >/dev/null 2>&1; then
     restorecon -Rv /opt/code-server || true
 fi
 
-# =========================================================
-# PATH
-# =========================================================
-
-if [ "$ROOT_MODE" = false ]; then
-
-    if ! grep -q '.local/bin' "${USER_HOME}/.bashrc"; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${USER_HOME}/.bashrc"
-    fi
-
-    export PATH="${BIN_DIR}:$PATH"
-
+if command -v chcon >/dev/null 2>&1; then
+    chcon -Rt bin_t /opt/code-server || true
 fi
 
 # =========================================================
@@ -421,7 +402,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${BIN_DIR}/code-server
+ExecStart=${BIN_DIR}/code-server --config ${CONFIG_FILE}
 Restart=always
 RestartSec=5
 
@@ -443,7 +424,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${BIN_DIR}/code-server
+ExecStart=${BIN_DIR}/code-server --config ${CONFIG_FILE}
 Restart=always
 RestartSec=5
 
@@ -466,6 +447,7 @@ echo "[11/12] Starting service..."
 if [ "$ROOT_MODE" = true ]; then
 
     systemctl daemon-reload
+    systemctl reset-failed code-server >/dev/null 2>&1 || true
     systemctl enable --now code-server
 
 else
@@ -473,11 +455,12 @@ else
     sudo loginctl enable-linger "$USER_NAME"
 
     systemctl --user daemon-reload
+    systemctl --user reset-failed code-server >/dev/null 2>&1 || true
     systemctl --user enable --now code-server
 
 fi
 
-sleep 3
+sleep 5
 
 # =========================================================
 # Firewall
@@ -532,26 +515,6 @@ if eval "$ACTIVE_CMD"; then
     echo "📂 Install  : ${INSTALL_BASE}/code-server"
     echo "⚙️ Config   : ${CONFIG_FILE}"
     echo "🧩 Binary   : ${BIN_DIR}/code-server"
-    echo
-
-    if [ "$ROOT_MODE" = true ]; then
-
-        echo "📋 Commands:"
-        echo
-        echo "systemctl status code-server"
-        echo "systemctl restart code-server"
-        echo "journalctl -u code-server -f"
-
-    else
-
-        echo "📋 Commands:"
-        echo
-        echo "systemctl --user status code-server"
-        echo "systemctl --user restart code-server"
-        echo "journalctl --user -u code-server -f"
-
-    fi
-
     echo
     echo "=================================================="
 
