@@ -8,6 +8,9 @@ set -euo pipefail
 # Features:
 # - User install mode (default)
 # - Root/global install mode (--root)
+# - Force replace mode (--force)
+# - Kill process using same port
+# - Disable existing code-server service
 # - Ubuntu / Debian
 # - AlmaLinux / Rocky / RHEL / CentOS
 # - Standalone GitHub release install
@@ -19,88 +22,55 @@ set -euo pipefail
 # INSTALLATION EXAMPLES
 # =========================================================
 #
-# ---------------------------------------------------------
-# USER MODE (recommended)
-# ---------------------------------------------------------
-#
-# Install to:
-#   ~/.local/lib/code-server
-#
-# Binary:
-#   ~/.local/bin/code-server
-#
-# Run:
-#
-#   curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
-#   | bash -s -- MyPassword123
-#
-# Custom port:
-#
-#   curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
-#   | bash -s -- MyPassword123 9090
-#
-# ---------------------------------------------------------
-# ROOT MODE
-# ---------------------------------------------------------
-#
-# Install to:
-#   /opt/code-server
-#
-# Binary:
-#   /usr/local/bin/code-server
-#
-# Run:
-#
-#   curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
-#   | sudo bash -s -- --root MyPassword123
-#
-# Custom port:
-#
-#   curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
-#   | sudo bash -s -- --root MyPassword123 9090
-#
-# =========================================================
-#
-# ACCESS
-# =========================================================
-#
-# Default:
-#
-#   http://SERVER_IP:8081
-#
-# Example:
-#
-#   http://192.168.1.10:8081
-#
-# =========================================================
-#
-# SERVICE COMMANDS
-# =========================================================
-#
 # USER MODE:
 #
-#   systemctl --user status code-server
-#   systemctl --user restart code-server
-#   journalctl --user -u code-server -f
+# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+# | bash -s -- MyPassword123
+#
+# USER MODE + FORCE:
+#
+# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+# | bash -s -- --force MyPassword123
 #
 # ROOT MODE:
 #
-#   systemctl status code-server
-#   systemctl restart code-server
-#   journalctl -u code-server -f
+# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+# | sudo bash -s -- --root MyPassword123
+#
+# ROOT MODE + FORCE:
+#
+# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+# | sudo bash -s -- --root --force MyPassword123
+#
+# CUSTOM PORT:
+#
+# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+# | sudo bash -s -- --root --force MyPassword123 9090
 #
 # =========================================================
 
 ROOT_MODE=false
+FORCE_MODE=false
 
 # =========================================================
 # Parse Flags
 # =========================================================
 
-if [[ "${1:-}" == "--root" ]]; then
-    ROOT_MODE=true
-    shift
-fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --root)
+            ROOT_MODE=true
+            shift
+            ;;
+        --force)
+            FORCE_MODE=true
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
 
 # =========================================================
 # Args
@@ -110,7 +80,7 @@ if [ $# -lt 1 ]; then
     echo "❌ Password required"
     echo
     echo "Usage:"
-    echo "  $0 [--root] <PASSWORD> [PORT]"
+    echo "  $0 [--root] [--force] <PASSWORD> [PORT]"
     exit 1
 fi
 
@@ -121,7 +91,7 @@ PORT="${2:-8081}"
 # Environment Check
 # =========================================================
 
-echo "[0/11] Checking environment..."
+echo "[0/12] Checking environment..."
 
 if ! command -v sudo >/dev/null 2>&1; then
     echo "❌ sudo is required"
@@ -147,7 +117,7 @@ if [ "$ROOT_MODE" = true ]; then
     USER_HOME="/root"
 
     INSTALL_BASE="/opt"
-    BIN_DIR="/usr/local/bin"
+    BIN_DIR="/opt/code-server/bin"
 
     CONFIG_DIR="/root/.config/code-server"
     CONFIG_FILE="${CONFIG_DIR}/config.yaml"
@@ -197,7 +167,7 @@ chmod 777 "$TMP_DIR"
 # Detect OS
 # =========================================================
 
-echo "[1/11] Detecting OS..."
+echo "[1/12] Detecting OS..."
 
 if [ -f /etc/os-release ]; then
     . /etc/os-release
@@ -236,7 +206,7 @@ fi
 # Install Dependencies
 # =========================================================
 
-echo "[2/11] Installing dependencies..."
+echo "[2/12] Installing dependencies..."
 
 if [ "$PKG_MANAGER" = "apt" ]; then
 
@@ -247,7 +217,8 @@ if [ "$PKG_MANAGER" = "apt" ]; then
         wget \
         tar \
         gzip \
-        jq
+        jq \
+        lsof
 
 else
 
@@ -256,7 +227,35 @@ else
         wget \
         tar \
         gzip \
-        jq
+        jq \
+        lsof
+
+fi
+
+# =========================================================
+# Force Cleanup
+# =========================================================
+
+echo "[3/12] Force cleanup..."
+
+if [ "$FORCE_MODE" = true ]; then
+
+    echo "   Force mode enabled"
+
+    if command -v lsof >/dev/null 2>&1; then
+
+        PORT_PID="$(lsof -ti tcp:${PORT} || true)"
+
+        if [ -n "${PORT_PID}" ]; then
+
+            echo "   Killing process on port ${PORT}: ${PORT_PID}"
+
+            kill -9 ${PORT_PID} || true
+        fi
+    fi
+
+    systemctl disable --now code-server >/dev/null 2>&1 || true
+    systemctl --user disable --now code-server >/dev/null 2>&1 || true
 
 fi
 
@@ -264,7 +263,7 @@ fi
 # Detect Architecture
 # =========================================================
 
-echo "[3/11] Detecting architecture..."
+echo "[4/12] Detecting architecture..."
 
 ARCH="$(uname -m)"
 
@@ -287,7 +286,7 @@ echo "   Architecture: $ARCH"
 # Fetch Latest Release
 # =========================================================
 
-echo "[4/11] Fetching latest release..."
+echo "[5/12] Fetching latest release..."
 
 LATEST_VERSION="$(
     curl -fsSL https://api.github.com/repos/coder/code-server/releases/latest \
@@ -313,7 +312,7 @@ TMP_FILE="${TMP_DIR}/${FILE_NAME}"
 # Cleanup Old Installation
 # =========================================================
 
-echo "[5/11] Cleaning old installation..."
+echo "[6/12] Cleaning old installation..."
 
 if [ "$ROOT_MODE" = true ]; then
 
@@ -330,7 +329,7 @@ else
 fi
 
 rm -rf "${INSTALL_BASE}/code-server"
-rm -f "${BIN_DIR}/code-server"
+rm -rf "${BIN_DIR}"
 
 mkdir -p "$INSTALL_BASE"
 mkdir -p "$BIN_DIR"
@@ -339,7 +338,7 @@ mkdir -p "$BIN_DIR"
 # Download
 # =========================================================
 
-echo "[6/11] Downloading code-server..."
+echo "[7/12] Downloading code-server..."
 
 curl -fL "$DOWNLOAD_URL" -o "$TMP_FILE"
 
@@ -352,7 +351,7 @@ fi
 # Extract
 # =========================================================
 
-echo "[7/11] Extracting package..."
+echo "[8/12] Extracting package..."
 
 tar -xzf "$TMP_FILE" -C "$TMP_DIR"
 
@@ -365,9 +364,18 @@ fi
 
 mv "$EXTRACTED_DIR" "${INSTALL_BASE}/code-server"
 
+mkdir -p "$BIN_DIR"
+
 ln -sf \
     "${INSTALL_BASE}/code-server/bin/code-server" \
     "${BIN_DIR}/code-server"
+
+chmod +x "${INSTALL_BASE}/code-server/bin/code-server"
+chmod +x "${BIN_DIR}/code-server"
+
+if command -v restorecon >/dev/null 2>&1; then
+    restorecon -Rv /opt/code-server || true
+fi
 
 # =========================================================
 # PATH
@@ -387,7 +395,7 @@ fi
 # Create Config
 # =========================================================
 
-echo "[8/11] Creating config..."
+echo "[9/12] Creating config..."
 
 mkdir -p "$CONFIG_DIR"
 
@@ -402,7 +410,7 @@ EOF
 # Create Service
 # =========================================================
 
-echo "[9/11] Creating service..."
+echo "[10/12] Creating service..."
 
 if [ "$ROOT_MODE" = true ]; then
 
@@ -453,7 +461,7 @@ fi
 # Start Service
 # =========================================================
 
-echo "[10/11] Starting service..."
+echo "[11/12] Starting service..."
 
 if [ "$ROOT_MODE" = true ]; then
 
@@ -475,7 +483,7 @@ sleep 3
 # Firewall
 # =========================================================
 
-echo "[11/11] Configuring firewall..."
+echo "[12/12] Configuring firewall..."
 
 if command -v firewall-cmd >/dev/null 2>&1; then
 
