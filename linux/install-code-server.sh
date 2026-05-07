@@ -14,39 +14,8 @@ set -euo pipefail
 # - Ubuntu / Debian
 # - AlmaLinux / Rocky / RHEL / CentOS
 # - Standalone GitHub release install
-# - Safer temp handling (/var/tmp)
 # - SELinux compatible
 # - Systemd service
-#
-# =========================================================
-#
-# INSTALLATION EXAMPLES
-# =========================================================
-#
-# USER MODE:
-#
-# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
-# | bash -s -- MyPassword123
-#
-# USER MODE + FORCE:
-#
-# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
-# | bash -s -- --force MyPassword123
-#
-# ROOT MODE:
-#
-# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
-# | sudo bash -s -- --root MyPassword123
-#
-# ROOT MODE + FORCE:
-#
-# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
-# | sudo bash -s -- --root --force MyPassword123
-#
-# CUSTOM PORT:
-#
-# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
-# | sudo bash -s -- --root --force MyPassword123 9090
 #
 # =========================================================
 
@@ -88,7 +57,10 @@ fi
 PASSWORD="$1"
 PORT="${2:-8081}"
 
-# Validate port
+# =========================================================
+# Validate Port
+# =========================================================
+
 if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
     echo "❌ Invalid port: $PORT"
     exit 1
@@ -118,8 +90,8 @@ if [ "$ROOT_MODE" = true ]; then
     USER_NAME="root"
     USER_HOME="/root"
 
-    INSTALL_BASE="/opt"
-    BIN_DIR="/opt/code-server/bin"
+    INSTALL_DIR="/opt/code-server"
+    BIN_FILE="/usr/local/bin/code-server"
 
     CONFIG_DIR="/root/.config/code-server"
     CONFIG_FILE="${CONFIG_DIR}/config.yaml"
@@ -141,8 +113,8 @@ else
 
     USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 
-    INSTALL_BASE="${USER_HOME}/.local/lib"
-    BIN_DIR="${USER_HOME}/.local/bin"
+    INSTALL_DIR="${USER_HOME}/.local/lib/code-server"
+    BIN_FILE="${USER_HOME}/.local/bin/code-server"
 
     CONFIG_DIR="${USER_HOME}/.config/code-server"
     CONFIG_FILE="${CONFIG_DIR}/config.yaml"
@@ -160,7 +132,6 @@ TMP_DIR="/var/tmp/code-server-installer"
 
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
-chmod 777 "$TMP_DIR"
 
 # =========================================================
 # Detect OS
@@ -248,9 +219,12 @@ if [ "$FORCE_MODE" = true ]; then
 
         if [ -n "${PORT_PID}" ]; then
 
-            echo "   Killing process on port ${PORT}: ${PORT_PID}"
+            echo "   Killing process on port ${PORT}:"
 
-            kill -9 ${PORT_PID} || true
+            for pid in ${PORT_PID}; do
+                echo "      PID ${pid}"
+                kill -9 "${pid}" || true
+            done
         fi
     fi
 
@@ -318,11 +292,13 @@ systemctl stop code-server >/dev/null 2>&1 || true
 systemctl disable code-server >/dev/null 2>&1 || true
 
 rm -f "$SERVICE_FILE"
-rm -rf "${INSTALL_BASE}/code-server"
-rm -rf "$BIN_DIR"
 
-mkdir -p "$INSTALL_BASE"
-mkdir -p "$BIN_DIR"
+# VERY IMPORTANT
+rm -rf "$INSTALL_DIR"
+rm -f "$BIN_FILE"
+
+mkdir -p "$(dirname "$INSTALL_DIR")"
+mkdir -p "$(dirname "$BIN_FILE")"
 
 # =========================================================
 # Download
@@ -352,24 +328,35 @@ if [ ! -d "$EXTRACTED_DIR" ]; then
     exit 1
 fi
 
-mv "$EXTRACTED_DIR" "${INSTALL_BASE}/code-server"
+mv "$EXTRACTED_DIR" "$INSTALL_DIR"
 
-mkdir -p "$BIN_DIR"
+# =========================================================
+# Create Binary Symlink
+# =========================================================
 
-ln -sf \
-    "${INSTALL_BASE}/code-server/bin/code-server" \
-    "${BIN_DIR}/code-server"
+REAL_BINARY="${INSTALL_DIR}/bin/code-server"
 
-chmod +x "${INSTALL_BASE}/code-server/bin/code-server"
-chmod +x "${BIN_DIR}/code-server"
+if [ ! -f "$REAL_BINARY" ]; then
+    echo "❌ code-server binary not found"
+    exit 1
+fi
 
-# SELinux fix
+chmod +x "$REAL_BINARY"
+
+ln -sf "$REAL_BINARY" "$BIN_FILE"
+
+chmod +x "$BIN_FILE"
+
+# =========================================================
+# SELinux Fix
+# =========================================================
+
 if command -v restorecon >/dev/null 2>&1; then
-    restorecon -Rv /opt/code-server || true
+    restorecon -Rv "$INSTALL_DIR" || true
 fi
 
 if command -v chcon >/dev/null 2>&1; then
-    chcon -Rt bin_t /opt/code-server || true
+    chcon -Rt bin_t "$INSTALL_DIR" || true
 fi
 
 # =========================================================
@@ -402,7 +389,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${BIN_DIR}/code-server --config ${CONFIG_FILE}
+ExecStart=${REAL_BINARY} --config ${CONFIG_FILE}
 Restart=always
 RestartSec=5
 
@@ -424,7 +411,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${BIN_DIR}/code-server --config ${CONFIG_FILE}
+ExecStart=${REAL_BINARY} --config ${CONFIG_FILE}
 Restart=always
 RestartSec=5
 
@@ -512,9 +499,9 @@ if eval "$ACTIVE_CMD"; then
     echo "👤 User     : ${USER_NAME}"
     echo "🔐 Password : ${PASSWORD}"
     echo
-    echo "📂 Install  : ${INSTALL_BASE}/code-server"
+    echo "📂 Install  : ${INSTALL_DIR}"
     echo "⚙️ Config   : ${CONFIG_FILE}"
-    echo "🧩 Binary   : ${BIN_DIR}/code-server"
+    echo "🧩 Binary   : ${BIN_FILE}"
     echo
     echo "=================================================="
 
