@@ -18,6 +18,26 @@ set -euo pipefail
 # - Systemd service
 #
 # =========================================================
+#
+# Examples:
+#
+# USER:
+# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+# | bash -s -- MyPassword123
+#
+# ROOT:
+# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+# | sudo bash -s -- --root MyPassword123
+#
+# FORCE:
+# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+# | sudo bash -s -- --root --force MyPassword123
+#
+# CUSTOM PORT:
+# curl -fsSL https://raw.githubusercontent.com/HaeMeto/tools/main/linux/install-code-server.sh \
+# | sudo bash -s -- --root --force MyPassword123 9090
+#
+# =========================================================
 
 ROOT_MODE=false
 FORCE_MODE=false
@@ -293,9 +313,16 @@ systemctl disable code-server >/dev/null 2>&1 || true
 
 rm -f "$SERVICE_FILE"
 
-# VERY IMPORTANT
+# remove old symlink loop
+if [ -L "$BIN_FILE" ]; then
+    rm -f "$BIN_FILE"
+fi
+
+# remove old install
 rm -rf "$INSTALL_DIR"
-rm -f "$BIN_FILE"
+
+# cleanup possible broken symlink inside install
+rm -f /opt/code-server/bin/code-server || true
 
 mkdir -p "$(dirname "$INSTALL_DIR")"
 mkdir -p "$(dirname "$BIN_FILE")"
@@ -337,15 +364,16 @@ mv "$EXTRACTED_DIR" "$INSTALL_DIR"
 REAL_BINARY="${INSTALL_DIR}/bin/code-server"
 
 if [ ! -f "$REAL_BINARY" ]; then
-    echo "❌ code-server binary not found"
+    echo "❌ Binary not found: $REAL_BINARY"
     exit 1
 fi
 
 chmod +x "$REAL_BINARY"
 
-ln -sf "$REAL_BINARY" "$BIN_FILE"
+# remove broken symlink first
+rm -f "$BIN_FILE"
 
-chmod +x "$BIN_FILE"
+ln -s "$REAL_BINARY" "$BIN_FILE"
 
 # =========================================================
 # SELinux Fix
