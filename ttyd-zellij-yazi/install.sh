@@ -12,7 +12,7 @@ TTYD_PASS="${TTYD_PASS:-changeme}"
 SESSION_NAME="${SESSION_NAME:-main}"
 
 FORCE=0
-SKIP_APT=0
+SKIP_PKGS=0
 SKIP_TTYD=0
 SKIP_ZELLIJ=0
 SKIP_YAZI=0
@@ -35,32 +35,32 @@ err()   { echo -e "${RED}[ERR]${NC}   $*"; }
 banner(){ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
 
 usage() {
-	cat <<EOF
+ cat <<EOF
 Usage: $0 [FLAGS]
 
 Flags:
-  --force            Reinstall all components regardless of existing version
-  --skip-apt         Skip apt package installation
-  --skip-ttyd        Skip ttyd installation
-  --skip-zellij      Skip Zellij installation
-  --skip-yazi        Skip Yazi installation
-  --skip-config      Skip Yazi config deployment
-  --skip-service     Skip systemd service creation
-  --non-interactive  Don't prompt, use defaults or environment variables
+ --force Reinstall all components regardless of existing version
+ --skip-packages Skip system package installation (alias: --skip-apt)
+ --skip-ttyd Skip ttyd installation
+ --skip-zellij Skip Zellij installation
+ --skip-yazi Skip Yazi installation
+ --skip-config Skip Yazi config deployment
+ --skip-service Skip systemd service creation
+ --non-interactive Don't prompt, use defaults or environment variables
 
 Environment variables (also set via interactive prompts):
-  TTYD_PORT      [7681]
-  TTYD_USER      [admin]
-  TTYD_PASS      [changeme]
-  SESSION_NAME   [main]
+ TTYD_PORT [7681]
+ TTYD_USER [admin]
+ TTYD_PASS [changeme]
+ SESSION_NAME [main]
 EOF
-	exit 0
+ exit 0
 }
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--force) FORCE=1 ;;
-		--skip-apt) SKIP_APT=1 ;;
+ --skip-packages|--skip-apt|--skip-pkgs) SKIP_PKGS=1 ;;
 		--skip-ttyd) SKIP_TTYD=1 ;;
 		--skip-zellij) SKIP_ZELLIJ=1 ;;
 		--skip-yazi) SKIP_YAZI=1 ;;
@@ -84,15 +84,34 @@ fi
 # shellcheck disable=SC1091
 . /etc/os-release
 
+IS_DEB=0
+IS_EL=0
+
 case "$ID" in
-	debian|ubuntu|linuxmint|raspbian|armbian|devuan)
-		ok "OS: $NAME ($VERSION_CODENAME)"
-		;;
-	*)
-		err "Unsupported OS: $ID. This script only supports Debian / Ubuntu and derivatives."
-		exit 1
-		;;
+ debian|ubuntu|linuxmint|raspbian|armbian|devuan)
+ IS_DEB=1
+ ok "OS: $NAME ($VERSION_CODENAME)"
+ ;;
+ almalinux|rocky|rhel|centos|fedora|ol)
+ IS_EL=1
+ ok "OS: $NAME ${VERSION_ID:-}"
+ ;;
+ *)
+ err "Unsupported OS: $ID. This script supports Debian/Ubuntu and RHEL derivatives (AlmaLinux, Rocky, etc.)"
+ exit 1
+ ;;
 esac
+
+if [ "$IS_EL" -eq 1 ] && [ "$IS_DEB" -eq 0 ]; then
+ log "Detected RHEL-family system. Enabling EPEL..."
+ if ! rpm -q epel-release >/dev/null 2>&1; then
+ dnf install -y -q epel-release 2>/dev/null || \
+ yum install -y -q epel-release 2>/dev/null || \
+ warn "Could not enable EPEL. Some packages may not be available."
+ else
+ ok "EPEL already enabled"
+ fi
+fi
 
 [[ $EUID -eq 0 ]] || { err "Please run as root."; exit 1; }
 
@@ -202,59 +221,101 @@ ensure_workdir() {
 	fi
 }
 
-# ─── APT Packages ─────────────────────────────────────────────────────────────
-APT_PACKAGES=(
-	curl wget tar unzip xz-utils ca-certificates
-	ffmpeg jq poppler-utils file fd-find ripgrep
-	fzf zoxide imagemagick
-)
+# ─── Package Manager Detection ─────────────────────────────────────────────────
+# Detect package manager and setup per-family package lists
+if [ "$IS_DEB" -eq 1 ]; then
+ PKG_MANAGER="apt-get"
+ PKG_QUERY="dpkg -s"
+ PKG_CACHE_FILE="/var/cache/apt/pkgcache.bin"
+ COMMON_PKGS=(curl wget tar unzip xz-utils ca-certificates)
+ OPTIONAL_PKGS=(ffmpeg jq poppler-utils file fd-find ripgrep fzf zoxide imagemagick)
+elif [ "$IS_EL" -eq 1 ]; then
+ PKG_MANAGER="dnf"
+ PKG_QUERY="rpm -q"
+ PKG_CACHE_FILE="/var/cache/dnf/packages.db"
+ # Prefer dnf, fallback to yum for older systems
+ command -v dnf >/dev/null 2>&1 || PKG_MANAGER="yum"
+ COMMON_PKGS=(curl wget tar unzip xz ca-certificates)
+ # ffmpeg not in standard RHEL repos; imagemagick → ImageMagick (case diff)
+ OPTIONAL_PKGS=(jq poppler-utils file fd-find ripgrep fzf zoxide ImageMagick)
+fi
 
-install_apt_packages() {
-	if [ "$SKIP_APT" -eq 1 ]; then
-		skip "APT packages (--skip-apt)"
-		return
-	fi
+# ─── Package Installation ─────────────────────────────────────────────────────
+install_packages() {
+ if [ "$SKIP_PKGS" -eq 1 ]; then
+ skip "System packages (--skip-packages)"
+ return
+ fi
 
-	log "Checking APT packages..."
+ log "Checking system packages..."
 
-	local missing=()
-	for pkg in "${APT_PACKAGES[@]}"; do
-		if dpkg -s "$pkg" >/dev/null 2>&1; then
-			continue
-		fi
-		missing+=("$pkg")
-	done
+ local missing=()
+ for pkg in "${COMMON_PKGS[@]}" "${OPTIONAL_PKGS[@]}"; do
+ if $PKG_QUERY "$pkg" >/dev/null 2>&1; then
+ continue
+ fi
+ missing+=("$pkg")
+ done
+ # "rpm -q ImageMagick" requires exact case; try lowercase too for EL
+ if [ "$IS_EL" -eq 1 ]; then
+ local extra=()
+ for pkg in "${missing[@]}"; do
+ if [ "$pkg" = "ImageMagick" ] && $PKG_QUERY imagemagick >/dev/null 2>&1; then
+ continue
+ fi
+ extra+=("$pkg")
+ done
+ missing=("${extra[@]}")
+ fi
 
-	if [ ${#missing[@]} -eq 0 ]; then
-		ok "All APT packages already installed"
-	else
-		local cache_age=99999
-		if [ -f /var/cache/apt/pkgcache.bin ]; then
-			local now
-			now=$(date +%s)
-			local cache_mtime
-			cache_mtime=$(stat -c %Y /var/cache/apt/pkgcache.bin 2>/dev/null || echo 0)
-			cache_age=$(( (now - cache_mtime) / 3600 ))
-		fi
+ if [ ${#missing[@]} -eq 0 ]; then
+ ok "All packages already installed"
+ else
+ if [ -f "$PKG_CACHE_FILE" ]; then
+ local cache_age=99999
+ local cache_mtime
+ cache_mtime=$(stat -c %Y "$PKG_CACHE_FILE" 2>/dev/null || echo 0)
+ if [ "$cache_mtime" -gt 0 ]; then
+ local now
+ now=$(date +%s)
+ cache_age=$(( (now - cache_mtime) / 3600 ))
+ fi
+ fi
 
-		if [ "$cache_age" -gt 12 ]; then
-			log "Updating apt cache..."
-			apt-get update -qq
-		else
-			ok "Apt cache is recent ($cache_age hours old), skipping update"
-		fi
+ if [ "${cache_age:-99999}" -gt 12 ]; then
+ log "Updating package cache..."
+ if [ "$PKG_MANAGER" = "dnf" ] || [ "$PKG_MANAGER" = "yum" ]; then
+ $PKG_MANAGER makecache -q 2>/dev/null || true
+ else
+ $PKG_MANAGER update -qq
+ fi
+ else
+ ok "Package cache is recent (${cache_age:-?} hours old), skipping update"
+ fi
 
-		log "Installing missing packages: ${missing[*]}"
-		apt-get install -y -qq "${missing[@]}"
-		ok "APT packages installed"
-	fi
+ log "Installing missing packages: ${missing[*]}"
+ $PKG_MANAGER install -y -q "${missing[@]}"
+ ok "Packages installed"
+ fi
 
-	if command -v fdfind >/dev/null && ! command -v fd >/dev/null; then
-		log "Creating fd symlink..."
-		ln -sf "$(command -v fdfind)" /usr/local/bin/fd
-		ok "fd symlink created"
-	fi
+ if [ "$IS_DEB" -eq 1 ] && command -v fdfind >/dev/null && ! command -v fd >/dev/null; then
+ log "Creating fd symlink (debian fd-find workaround)..."
+ ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+ ok "fd symlink created"
+ fi
+
+ if [ "$IS_EL" -eq 1 ]; then
+ if ! command -v ffmpeg >/dev/null 2>&1; then
+ warn "ffmpeg not found. Yazi media preview will be limited."
+ warn "Install via RPMFusion: dnf install --nogpgcheck https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(rpm -E %rhel).noarch.rpm"
+ warn " dnf install --nogpgcheck https://mirrors.rpmfusion.org/free/el/rpmfusion-free-release-$(rpm -E %rhel).noarch.rpm"
+ warn " dnf install ffmpeg"
+ fi
+ fi
 }
+
+# Suppress unused variable warning
+true "${OPTIONAL_PKGS[@]}"
 
 # ─── Version Check ────────────────────────────────────────────────────────────
 # Returns 0 if installed version matches expected, 1 otherwise
@@ -500,7 +561,7 @@ echo
 log "Starting ttyd + Zellij + Yazi installation"
 banner
 
-install_apt_packages
+install_packages
 banner
 install_ttyd
 install_zellij
