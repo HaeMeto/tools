@@ -435,52 +435,64 @@ install_yazi() {
 
 # ─── Deploy Yazi Config ───────────────────────────────────────────────────────
 deploy_yazi_config() {
-	if [ "$SKIP_CONFIG" -eq 1 ]; then
-		skip "Yazi config (--skip-config)"
-		return
-	fi
+ if [ "$SKIP_CONFIG" -eq 1 ]; then
+ skip "Yazi config (--skip-config)"
+ return
+ fi
 
-	local script_dir
-	script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")" 2>/dev/null || echo "")"
+ local yazi_conf_dir="${HOME:-/root}/.config/yazi"
+ local src_dir=""
 
-	# When piped via curl | bash, SCRIPT_DIR is empty — we can't bundle configs
-	if [ -z "$script_dir" ] || [ ! -d "$script_dir/yazi-config" ]; then
-		warn "Yazi config directory not found (likely running via pipe). Skipping config deployment."
-		warn "Config files are available at: https://github.com/HaeMeto/tools/tree/main/ttyd-zellij-yazi/yazi-config"
-		return
-	fi
+ local script_dir
+ script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")" 2>/dev/null || echo "")"
 
-	local yazi_conf_dir="${HOME:-/root}/.config/yazi"
-	log "Deploying Yazi config to $yazi_conf_dir..."
+ if [ -n "$script_dir" ] && [ -d "$script_dir/yazi-config" ]; then
+ src_dir="$script_dir/yazi-config"
+ else
+ log "Fetching Yazi config from GitHub..."
+ ensure_workdir
+ src_dir="$WORKDIR/yazi-config-fetched"
+ mkdir -p "$src_dir"
+ local base_url="https://raw.githubusercontent.com/HaeMeto/tools/main/ttyd-zellij-yazi/yazi-config"
+ for f in theme.toml keymap.toml yazi.toml; do
+ curl -fsSL --connect-timeout 5 --max-time 10 "${base_url}/${f}" -o "$src_dir/$f" 2>/dev/null || \
+ warn "Failed to fetch $f from GitHub"
+ done
+ fi
 
-	mkdir -p "$yazi_conf_dir"
+ if [ ! -d "$src_dir" ] || [ -z "$(ls -A "$src_dir"/*.toml 2>/dev/null)" ]; then
+ warn "No Yazi config files found. Skipping config deployment."
+ return
+ fi
 
-	local deployed=0
-	local skipped=0
-	local src_dir="$script_dir/yazi-config"
+ log "Deploying Yazi config to $yazi_conf_dir..."
+ mkdir -p "$yazi_conf_dir"
 
-	for f in "$src_dir"/*.toml; do
-		local fname
-		fname="$(basename "$f")"
-		local dst="$yazi_conf_dir/$fname"
+ local deployed=0
+ local skipped=0
 
-		if [ "$FORCE" -eq 0 ] && [ -f "$dst" ]; then
-			if cmp -s "$f" "$dst"; then
-				((skipped++)) || true
-				continue
-			fi
-			warn "Config $fname differs — overwriting"
-		fi
+ for f in "$src_dir"/*.toml; do
+ local fname
+ fname="$(basename "$f")"
+ local dst="$yazi_conf_dir/$fname"
 
-		cp "$f" "$dst"
-		((deployed++)) || true
-	done
+ if [ "$FORCE" -eq 0 ] && [ -f "$dst" ]; then
+ if cmp -s "$f" "$dst"; then
+ ((skipped++)) || true
+ continue
+ fi
+ warn "Config $fname differs — overwriting"
+ fi
 
-	if [ "$deployed" -eq 0 ] && [ "$skipped" -gt 0 ]; then
-		ok "Yazi config already up-to-date ($skipped files skipped)"
-	else
-		ok "Yazi config deployed ($deployed files installed)"
-	fi
+ cp "$f" "$dst"
+ ((deployed++)) || true
+ done
+
+ if [ "$deployed" -eq 0 ] && [ "$skipped" -gt 0 ]; then
+ ok "Yazi config already up-to-date ($skipped files skipped)"
+ else
+ ok "Yazi config deployed ($deployed files installed)"
+ fi
 }
 
 # ─── Systemd Service ──────────────────────────────────────────────────────────
