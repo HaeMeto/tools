@@ -227,7 +227,7 @@ if [ "$IS_DEB" -eq 1 ]; then
  PKG_MANAGER="apt-get"
  PKG_QUERY="dpkg -s"
  PKG_CACHE_FILE="/var/cache/apt/pkgcache.bin"
- COMMON_PKGS=(curl wget tar unzip xz-utils ca-certificates)
+ COMMON_PKGS=(curl wget tar unzip xz-utils ca-certificates nano)
  OPTIONAL_PKGS=(ffmpeg jq poppler-utils file fd-find ripgrep fzf zoxide imagemagick)
 elif [ "$IS_EL" -eq 1 ]; then
  PKG_MANAGER="dnf"
@@ -235,7 +235,7 @@ elif [ "$IS_EL" -eq 1 ]; then
  PKG_CACHE_FILE="/var/cache/dnf/packages.db"
  # Prefer dnf, fallback to yum for older systems
  command -v dnf >/dev/null 2>&1 || PKG_MANAGER="yum"
- COMMON_PKGS=(curl wget tar unzip xz ca-certificates)
+ COMMON_PKGS=(curl wget tar unzip xz ca-certificates nano)
  # ffmpeg not in standard RHEL repos; imagemagick → ImageMagick (case diff)
  OPTIONAL_PKGS=(jq poppler-utils file fd-find ripgrep fzf zoxide ImageMagick)
 fi
