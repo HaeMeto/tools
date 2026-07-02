@@ -228,7 +228,7 @@ if [ "$IS_DEB" -eq 1 ]; then
  PKG_QUERY="dpkg -s"
  PKG_CACHE_FILE="/var/cache/apt/pkgcache.bin"
  COMMON_PKGS=(curl wget tar unzip xz-utils ca-certificates nano)
- OPTIONAL_PKGS=(ffmpeg jq poppler-utils file fd-find ripgrep fzf zoxide imagemagick)
+ OPTIONAL_PKGS=(ffmpeg jq poppler-utils file fd-find ripgrep fzf zoxide imagemagick btop)
 elif [ "$IS_EL" -eq 1 ]; then
  PKG_MANAGER="dnf"
  PKG_QUERY="rpm -q"
@@ -237,7 +237,7 @@ elif [ "$IS_EL" -eq 1 ]; then
  command -v dnf >/dev/null 2>&1 || PKG_MANAGER="yum"
  COMMON_PKGS=(curl wget tar unzip xz ca-certificates nano)
  # ffmpeg not in standard RHEL repos; imagemagick → ImageMagick (case diff)
- OPTIONAL_PKGS=(jq poppler-utils file fd-find ripgrep fzf zoxide ImageMagick)
+ OPTIONAL_PKGS=(jq poppler-utils file fd-find ripgrep fzf zoxide ImageMagick btop)
 fi
 
 # ─── Package Installation ─────────────────────────────────────────────────────
