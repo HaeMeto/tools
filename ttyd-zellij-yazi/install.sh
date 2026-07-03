@@ -186,28 +186,39 @@ banner
 
 # ─── Interactive Prompts ──────────────────────────────────────────────────────
 if [ "$NON_INTERACTIVE" -eq 0 ] && [ -t 0 ]; then
-	log "Interactive mode: configure ttyd credentials"
-	echo
+ log "Interactive mode: configure settings"
+ echo
 
-	read -rp "Port       [$TTYD_PORT]: " input
-	TTYD_PORT="${input:-$TTYD_PORT}"
+ if [ "$SKIP_TTYD" -eq 0 ]; then
+ read -rp "Port [$TTYD_PORT]: " input
+ TTYD_PORT="${input:-$TTYD_PORT}"
+ read -rp "Username [$TTYD_USER]: " input
+ TTYD_USER="${input:-$TTYD_USER}"
+ read -rsp "Password [$TTYD_PASS]: " input
+ echo
+ TTYD_PASS="${input:-$TTYD_PASS}"
+ else
+ log "Skipping ttyd credential prompts (--skip-ttyd)"
+ fi
 
-	read -rp "Username   [$TTYD_USER]: " input
-	TTYD_USER="${input:-$TTYD_USER}"
+ if [ "$SKIP_ZELLIJ" -eq 0 ]; then
+ read -rp "Session [$SESSION_NAME]: " input
+ SESSION_NAME="${input:-$SESSION_NAME}"
+ else
+ log "Skipping session name prompt (--skip-zellij)"
+ fi
 
-	read -rsp "Password   [$TTYD_PASS]: " input
-	echo
-	TTYD_PASS="${input:-$TTYD_PASS}"
-
-	read -rp "Session    [$SESSION_NAME]: " input
-	SESSION_NAME="${input:-$SESSION_NAME}"
-
-	echo
-	banner
+ echo
+ banner
 else
-	log "Non-interactive mode: using defaults or environment variables"
-	log "  Port: $TTYD_PORT | User: $TTYD_USER | Pass: **** | Session: $SESSION_NAME"
-	banner
+ log "Non-interactive mode: using defaults or environment variables"
+ if [ "$SKIP_TTYD" -eq 0 ]; then
+ log " Port: $TTYD_PORT | User: $TTYD_USER | Pass: ****"
+ fi
+ if [ "$SKIP_ZELLIJ" -eq 0 ]; then
+ log " Session: $SESSION_NAME"
+ fi
+ banner
 fi
 
 # ─── Temp Workdir ─────────────────────────────────────────────────────────────
@@ -497,7 +508,11 @@ deploy_yazi_config() {
 
 # ─── Systemd Service ──────────────────────────────────────────────────────────
 write_systemd_service() {
-	if [ "$SKIP_SERVICE" -eq 1 ]; then
+ if [ "$SKIP_TTYD" -eq 1 ]; then
+ skip "Systemd service (--skip-ttyd, ttyd not installed)"
+ return
+ fi
+ if [ "$SKIP_SERVICE" -eq 1 ]; then
 		skip "Systemd service (--skip-service)"
 		return
 	fi
@@ -605,19 +620,29 @@ echo "└───────────────────────�
 echo
 
 # ------- Server IP -------
-SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "SERVER_IP")
-echo -e "  ${CYAN}URL:${NC}      http://${SERVER_IP}:${TTYD_PORT}"
-echo -e "  ${CYAN}Username:${NC}  ${TTYD_USER}"
-echo -e "  ${CYAN}Password:${NC}  ${TTYD_PASS}"
-echo -e "  ${CYAN}Session:${NC}   ${SESSION_NAME}"
+if [ "$SKIP_TTYD" -eq 0 ]; then
+ SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "SERVER_IP")
+ echo -e " ${CYAN}URL:${NC} http://${SERVER_IP}:${TTYD_PORT}"
+ echo -e " ${CYAN}Username:${NC} ${TTYD_USER}"
+ echo -e " ${CYAN}Password:${NC} ${TTYD_PASS}"
+fi
+if [ "$SKIP_ZELLIJ" -eq 0 ]; then
+ echo -e " ${CYAN}Session:${NC} ${SESSION_NAME}"
+fi
 echo
 
 echo "┌─ Useful Commands ─────────────────────────────"
 echo "│"
+if [ "$SKIP_TTYD" -eq 0 ]; then
 echo "│ systemctl status ttyd"
 echo "│ journalctl -u ttyd -f"
+fi
+if [ "$SKIP_ZELLIJ" -eq 0 ]; then
 echo "│ zellij list-sessions"
+fi
+if [ "$SKIP_YAZI" -eq 0 ]; then
 echo "│ yazi"
+fi
 echo "│"
 echo "└───────────────────────────────────────────────"
 echo
